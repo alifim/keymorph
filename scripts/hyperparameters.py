@@ -52,8 +52,6 @@ EVAL_AUGS = [
 EVAL_KP_ALIGNS = [
     # "rigid",
     "affine",
-    "tps_10",
-    "tps_1",
     "tps_0",
     "tps_0.00001",
     "tps_0.0001",
