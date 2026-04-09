@@ -59,7 +59,7 @@ def initialize_wandb(config):
 def load_checkpoint(
     checkpoint_path, model, optimizer=None, scheduler=None, device="cpu"
 ):
-    state = torch.load(checkpoint_path, map_location=torch.device(device))
+    state = torch.load(checkpoint_path, map_location=torch.device(device), weights_only=False)
     state_dict = state["state_dict"]
 
     # Sometimes the model is saved with "backbone" prefix
