@@ -6,10 +6,9 @@
 #SBATCH --time=72:00:00 # set this time according to your need
 #SBATCH --mem=64GB # how much RAM will your notebook consume?
 #SBATCH --gres=gpu:a100:1 # if you need to use a GPU
-#SBATCH --exclude=ai-gpu06 # if you need to use a GPU
 #SBATCH -p sablab-gpu # specify partition
-#SBATCH -o ./job_out/%j-train.out
-#SBATCH -e ./job_err/%j-train.err
+#SBATCH -o ./job_out/%j-pretrain.out
+#SBATCH -e ./job_err/%j-pretrain.err
 
 
 source /midtier/sablab/scratch/alm4065/keymorph/.venv/bin/activate
