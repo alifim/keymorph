@@ -9,6 +9,7 @@ import wandb
 import torchio as tio
 import json
 from copy import deepcopy
+import torch
 
 from keymorph.unet3d.model import UNet2D, UNet3D, TruncatedUNet3D
 from keymorph.net import ConvNet
@@ -74,7 +75,7 @@ def parse_args():
     parser.add_argument(
         "--max_train_keypoints",
         type=int,
-        default=64,
+        default=32,
         help="Number of keypoints to subsample TPS, to save memory",
     )
     parser.add_argument(
@@ -184,7 +185,7 @@ def parse_args():
     parser.add_argument(
         "--steps_per_epoch",
         type=int,
-        default=32,
+        default=8,
         help="Number of gradient steps per epoch",
     )
     parser.add_argument(
@@ -310,15 +311,22 @@ def get_data(transform, args):
     else:
         raise ValueError('Invalid dataset "{}"'.format(args.train_dataset))
 
-    pretrain_loader, train_loader, id_eval_loaders = dataset.get_loaders(
+    pretrain_loader, train_loader, id_eval_loaders = dataset.get_loaders( # TODO OMER CHANGED FOR whole inference
         args.batch_size,
         args.num_workers,
         args.mix_modalities,
         transform=transform,
-        list_of_test_mods=hps.EVAL_UNI_NAMES + hps.EVAL_MULTI_NAMES,
+        list_of_test_mods=hps.EVAL_UNI_NAMES,
     )
+    # id_eval_loaders = dataset.get_loaders(
+    #     args.batch_size,
+    #     args.num_workers,
+    #     args.mix_modalities,
+    #     transform=transform,
+    #     list_of_test_mods=hps.EVAL_UNI_NAMES,
+    # )
     args.seg_available = dataset.seg_available
-    return {
+    return { # TODO CHANGE THIS FOR WHOLE
         "pretrain": pretrain_loader,
         "train": train_loader,
         "eval": id_eval_loaders,
@@ -398,7 +406,7 @@ def get_model(args):
 def main():
     args = parse_args()
     if args.debug_mode:
-        args.steps_per_epoch = 3
+        args.steps_per_epoch = 1
         args.early_stop_eval_subjects = 1
     pprint(vars(args))
 
@@ -563,7 +571,10 @@ def main():
                 args,
             )
 
-            train_loss.append(epoch_stats["loss"])
+            if "loss" in epoch_stats:
+                train_loss.append(epoch_stats["loss"])
+            else:
+                print(f"[Warning] 'loss' not found in epoch_stats at epoch {epoch}. Skipping append.")
 
             print(f"Epoch {epoch}/{args.epochs}")
             for name, metric in epoch_stats.items():
@@ -609,7 +620,10 @@ def main():
                 optimizer,
                 args,
             )
-            train_loss.append(epoch_stats["loss"])
+            if "loss" in epoch_stats:
+                train_loss.append(epoch_stats["loss"])
+            else:
+                print(f"[Warning] 'loss' not found in epoch_stats at epoch {epoch}. Skipping append.")
 
             for metric_name, metric in epoch_stats.items():
                 print(f"[Train Stat] {metric_name}: {metric:.5f}")

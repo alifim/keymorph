@@ -4,6 +4,7 @@ import numpy as np
 import torchio as tio
 import time
 import torch.nn.functional as F
+from collections import defaultdict
 
 from keymorph.utils import convert_points_norm2real, convert_points_real2norm
 from keymorph.augmentation import random_affine_augment
@@ -12,8 +13,15 @@ from keymorph.viz_tools import (
     imshow_registration_3d,
 )
 
-from brainmorph.scripts.script_utils import aggregate_dicts
+# from brainmorph.scripts.script_utils import aggregate_dicts
 
+
+def aggregate_dicts(dicts):
+    result = defaultdict(list)
+    for d in dicts:
+        for k, v in d.items():
+            result[k].append(v)
+    return {k: sum(v) / len(v) for k, v in result.items()}
 
 def run_pretrain(loader, ref_subject, keymorph_model, optimizer, args):
     """Run pretraining loop for a single epoch.

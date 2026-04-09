@@ -3,6 +3,7 @@ import itertools
 import torchio as tio
 from torch.utils.data import Dataset, DataLoader, ConcatDataset
 from itertools import combinations
+import torch
 
 
 class PairedDataset(Dataset):
@@ -22,7 +23,9 @@ class PairedDataset(Dataset):
         return len(self.subject_list)
 
     def __getitem__(self, i):
+
         sub1, sub2 = self.subject_list[i]
+
         sub1.load()
         sub2.load()
         if self.transform:
@@ -145,6 +148,7 @@ class KeyMorphDataset:
         subjects = self.get_subjects(
             train=False,
         )
+
         if isinstance(subjects, dict):
             test_datasets = []
             for dataset_name in list_of_mods:
@@ -163,6 +167,7 @@ class KeyMorphDataset:
                 num_workers=num_workers,
             )
         else:
+           
             test_dataset = PairedDataset(
                 list(zip(subjects[0], subjects[1])), transform=transform
             )

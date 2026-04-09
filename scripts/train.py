@@ -9,8 +9,32 @@ from keymorph.utils import align_img, one_hot, one_hot_subsampled_pair
 from keymorph.viz_tools import imshow_registration_2d, imshow_registration_3d
 from keymorph.augmentation import random_affine_augment
 import keymorph.loss_ops as loss_ops
+from keymorph.pytorch_ssim import SSIM3D,MS_SSIM3D
 
 from scripts.script_utils import aggregate_dicts
+def print_dimension_info(fixed, moving):
+    """Print detailed dimension information for debugging"""
+    print("\n=== DIMENSION DEBUGGING INFO ===")
+    
+    # Print image paths
+    print(f"Fixed image path: {fixed['img']['path']}")
+    print(f"Moving image path: {moving['img']['path']}")
+    
+    # Print segmentation paths if available
+    if 'seg' in fixed:
+        print(f"Fixed segmentation path: {fixed['seg']['path']}")
+    if 'seg' in moving:
+        print(f"Moving segmentation path: {moving['seg']['path']}")
+    
+    # Print dimensions
+    img_f, img_m = fixed["img"][tio.DATA], moving["img"][tio.DATA]
+    print(f"Fixed image dimensions: {img_f.shape}")
+    print(f"Moving image dimensions: {img_m.shape}")
+    
+    if 'seg' in fixed and 'seg' in moving:
+        seg_f, seg_m = fixed["seg"][tio.DATA], moving["seg"][tio.DATA]
+        print(f"Fixed segmentation dimensions: {seg_f.shape}")
+        print(f"Moving segmentation dimensions: {seg_m.shape}")
 
 
 def run_train(train_loader, registration_model, optimizer, args):
@@ -37,28 +61,75 @@ def run_train(train_loader, registration_model, optimizer, args):
 
     for step_idx, subjects in enumerate(train_loader):
         fixed, moving = subjects
+        print_dimension_info(fixed,moving)
         if step_idx == args.steps_per_epoch:
             break
 
         # Get images and segmentations from TorchIO subject
         img_f, img_m = fixed["img"][tio.DATA], moving["img"][tio.DATA]
         aff_f, aff_m = fixed["img"]["affine"], moving["img"]["affine"]
-        if np.prod(img_f.shape) >= 77594624:
-            print("Skipping large image")
+        print("img_f prod:" + str(np.prod(img_f.shape)))
+        # if np.prod(img_f.shape) >= 77594624: # TO DELETE
+        if np.prod(img_f.shape) >= 24000000: # TO DELETE
+            # print("Skipping large image")
+            print("LARGE RESOLUTION IMAGE")
+            print("img_f path:"+ str(fixed['img']['path']))
             continue
-        if np.prod(img_m.shape) >= 77594624:
-            print("Skipping large image")
+
+        print("img_m prod:" + str(np.prod(img_m.shape)))
+        # if np.prod(img_m.shape) >= 77594624:
+        if np.prod(img_m.shape) >= 24000000:
+            # print("Skipping large image")
+            print("LARGE RESOLUTION IMAGE")
+            print("img_m path:"+ str(moving['img']['path']))
             continue
+        print("step: " + str(step_idx))
+
         if args.seg_available:
             seg_f, seg_m = fixed["seg"][tio.DATA], moving["seg"][tio.DATA]
             # One-hot encode segmentations
+            if np.prod(seg_f.shape) >= 23000000: # TO DELETE
+            # print("Skipping large image")
+                print("LARGE RESOLUTION IMAGE")
+                print("seg_f path:"+ str(fixed['seg']['path']))
+                continue
+            # if np.prod(img_m.shape) >= 77594624:
+            if np.prod(seg_m.shape) >= 23000000:
+                # print("Skipping large image")
+                print("LARGE RESOLUTION IMAGE")
+                print("seg_m path:"+ str(moving['seg']['path']))
+                continue
+            print("seg_f shape before one-hot: " + str(seg_f.shape))
+            print("seg_m shape before one-hot: " + str(seg_m.shape))
+
             if args.max_train_seg_channels is not None:
                 seg_f, seg_m = one_hot_subsampled_pair(
                     seg_f.long(), seg_m.long(), args.max_train_seg_channels
                 )
             else:
-                seg_f = one_hot(seg_f.long())
-                seg_m = one_hot(seg_m.long())
+                if len(np.unique(seg_f)) == 13 or len(np.unique(seg_m)) == 13:
+                    print("something is wrong...")
+                    print("number of classes: " + str(len(np.unique(seg_f))))
+                    print("number of classes: " + str(len(np.unique(seg_m))))
+                    seg_f = one_hot(seg_f)
+                    seg_m = one_hot(seg_m)
+                    continue
+                # else:
+                #     print("Seg doesn't have 4 organs..")
+                #     print("number of classes: " + str(len(np.unique(seg_f))))
+                #     print("number of classes: " + str(len(np.unique(seg_m))))
+
+                #     print("Shape seg fixed " + str(seg_f.size()))
+                #     print("Shape seg moving " + str(seg_m.size()))
+                #     print("Shape image fixed " + str(img_f.size()))
+                #     print("Shape image moving " + str(img_m.size()))
+
+                #     seg_f = one_hot(seg_f)
+                #     seg_m = one_hot(seg_m)
+                #     print("Shape seg fixed " + str(seg_f.size()))
+                #     print("Shape seg moving " + str(seg_m.size()))
+                #     continue
+                
 
         assert (
             img_f.shape[1] == 1
@@ -76,12 +147,14 @@ def run_train(train_loader, registration_model, optimizer, args):
             seg_f = seg_f.float().to(args.device)
             seg_m = seg_m.float().to(args.device)
 
-        # Explicitly augment moving image
-        if args.affine_slope >= 0:
-            scale_augment = np.clip(args.curr_epoch / args.affine_slope, None, 1)
-        else:
-            scale_augment = 1
+        # Explicitly augment moving image # TODO COMMENTED IT. YET, DIDN'T TRAIN AFTER COMMENTING
+        # if args.affine_slope >= 0:
+        #     scale_augment = np.clip(args.curr_epoch / args.affine_slope, None, 1)
+        # else:
+        #     scale_augment = 1
+        scale_augment = 1
         if args.seg_available:
+            print("max random params: "+str(max_random_params))
             img_m, seg_m, aug_affine = random_affine_augment(
                 img_m,
                 seg=seg_m,
@@ -96,7 +169,7 @@ def run_train(train_loader, registration_model, optimizer, args):
                 scale_params=scale_augment,
                 return_affine_matrix=True,
             )
-        # New moving affine matrix is the composition of the original affine matrix and the augmentation matrix
+        # # New moving affine matrix is the composition of the original affine matrix and the augmentation matrix
         aff_m = torch.bmm(aff_m, aug_affine)
 
         optimizer.zero_grad()
@@ -151,27 +224,59 @@ def run_train(train_loader, registration_model, optimizer, args):
 
             # Compute metrics
             metrics = {}
+
             metrics["scale_augment"] = scale_augment
             metrics["mse"] = loss_ops.MSELoss()(img_f, img_a)
+            metrics['ssim'] = 1 - SSIM3D(window_size=5, size_average=True)(img_f, img_a)
+            metrics['ms_ssim'] = 1 - MS_SSIM3D(window_size=5, size_average=True)(img_f, img_a)
+
             if args.seg_available:
-                metrics["softdiceloss"] = loss_ops.DiceLoss()(seg_a, seg_f)
-                metrics["softdice"] = 1 - metrics["softdiceloss"]
+                print(f"Shape of seg_a before dice: {seg_a.shape}")
+                print(f"Shape of seg_f before dice: {seg_f.shape}")
+                print(f"Unique values in seg_a: {torch.unique(seg_a)}")
+                print(f"Unique values in seg_f: {torch.unique(seg_f)}")
 
             # Compute loss
             if loss_fn == "mse":
                 loss = metrics["mse"]
             elif loss_fn == "dice":
+                metrics["softdiceloss"] = loss_ops.DiceLoss()(seg_a, seg_f)
+                metrics["softdice"] = 1 - metrics["softdiceloss"]
                 loss = metrics["softdiceloss"]
+            elif loss_fn == "ssim":
+                loss = metrics["ssim"]
+            elif loss_fn == "mse+ssim":
+                alpha = 0.8
+                loss = alpha * metrics["mse"] + (1 - alpha) * metrics["ssim"]
+            elif loss_fn == "dice+mse":
+                metrics["softdiceloss"] = loss_ops.DiceLoss()(seg_a, seg_f)
+                metrics["softdice"] = 1 - metrics["softdiceloss"]
+                alpha = 0.5
+                loss = alpha * metrics["mse"] + (1 - alpha) * metrics['softdiceloss']
+            elif loss_fn == "dice+ssim":
+                metrics["softdiceloss"] = loss_ops.DiceLoss()(seg_a, seg_f)
+                metrics["softdice"] = 1 - metrics["softdiceloss"]
+                alpha = 0.5
+                loss = alpha * metrics["ssim"] + (1 - alpha) * metrics['softdiceloss']
+            elif loss_fn == "ms_ssim":
+                loss = metrics['ms_ssim']
+            elif loss_fn == "perceptual+ssim":
+                alpha = 0.5
+                loss = alpha * metrics["ssim"] + (1 - alpha) * metrics["perceptual"]
+            elif loss_fn == "perceptual":
+                loss = metrics["perceptual"]
             else:
                 raise ValueError('Invalid loss function "{}"'.format(loss_fn))
             metrics["loss"] = loss
 
         # Perform backward pass
         if args.use_amp:
+            print("LOSS :" + str(loss))
             scaler.scale(loss).backward()
             scaler.step(optimizer)
             scaler.update()
         else:
+            print("LOSS :" + str(loss))
             loss.backward()
             optimizer.step()
 
@@ -289,5 +394,4 @@ def run_train(train_loader, registration_model, optimizer, args):
                             )
                         ),
                     )
-
     return aggregate_dicts(res)

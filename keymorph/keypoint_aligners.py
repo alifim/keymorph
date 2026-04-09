@@ -317,7 +317,38 @@ class TPS(nn.Module):
         A[:, :T, -(self.dim + 1) :] = P
         A[:, -(self.dim + 1) :, :T] = P.transpose(1, 2)
 
-        return torch.linalg.solve(A, v)
+        return torch.linalg.solve(A, v) # better results but error singular matrix
+        # return torch.linalg.lstsq(A, v).solution # bad results
+
+    # ALAN's without View with T multiplication
+    # def fit_dim(self, c, lmbda, w=None):
+    #     device = c.device
+    #     bs, T = c.shape[0], c.shape[1]
+    #     ctrl, tgt = c[:, :, : self.dim], c[:, :, -1]
+
+    #     # Build K matrix
+    #     U = TPS.u(TPS.d(ctrl, ctrl))
+    #     if w is not None:
+    #         w = torch.diag_embed(w)
+    #         # Remove .view() from T since it's an integer
+    #         K = U + torch.reciprocal(w + 1e-6) * lmbda.view(bs, 1, 1) * T
+    #     else:
+    #         I = torch.eye(T).repeat(bs, 1, 1).float().to(device)
+    #         K = U + I * lmbda.view(bs, 1, 1)
+
+    #     # Rest of the code remains the same
+    #     P = torch.ones((bs, T, self.dim + 1)).float()
+    #     P[:, :, 1:] = ctrl
+
+    #     v = torch.zeros(bs, T + self.dim + 1).float()
+    #     v[:, :T] = tgt
+
+    #     A = torch.zeros((bs, T + self.dim + 1, T + self.dim + 1)).float()
+    #     A[:, :T, :T] = K
+    #     A[:, :T, -(self.dim + 1) :] = P
+    #     A[:, -(self.dim + 1) :, :T] = P.transpose(1, 2)
+
+    #     return torch.linalg.solve(A, v)
 
     @staticmethod
     def d(a, b):

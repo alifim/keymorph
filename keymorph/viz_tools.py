@@ -161,7 +161,7 @@ def imshow_img_and_points_3d(
     all_points=None,
     weights=None,
     projection=False,
-    slab_thickness=10,
+    slab_thickness=1,
     axes=None,
     rotate_90_deg=0,
     markers=(".", "x"),
@@ -216,11 +216,11 @@ def imshow_img_and_points_3d(
             all_points = np.flip(all_points, axis=-1)
 
         if point_space == "norm":
-            print("Converting points from [-1, 1] to image coordinates...")
+            # print("Converting points from [-1, 1] to image coordinates...")
             all_points = convert_points_norm2voxel(all_points, img_dims)
 
         if weights is None:
-            weights = np.ones(len(all_points))
+            weights = np.ones(all_points.shape[1]) # TODO OMER CHANGED THIS
         else:
             weights = _normalize(weights)
 
@@ -242,6 +242,7 @@ def imshow_img_and_points_3d(
 
     if plot_points:
         cmap = matplotlib.colormaps["bwr"]
+        min_alpha = 0.7
         for points, marker in zip(all_points, markers):
             points_12, depth_12 = points[:, [1, 2]], points[:, 0]
             points_02, depth_02 = points[:, [0, 2]], points[:, 1]
@@ -255,7 +256,9 @@ def imshow_img_and_points_3d(
 
             else:
                 start, stop = ind_12 - slab_thickness / 2, ind_12 + slab_thickness / 2
-                indices = (depth_12 > start).nonzero() and (depth_12 < stop).nonzero()
+                # indices = (depth_12 > start).nonzero() and (depth_12 < stop).nonzero()
+                indices = np.where((depth_12 > start) & (depth_12 < stop))
+
                 if len(indices[0]) == 0:
                     plot_12 = False
                 else:
@@ -265,7 +268,9 @@ def imshow_img_and_points_3d(
                     weights_12 = weights[indices]
 
                 start, stop = ind_02 - slab_thickness / 2, ind_02 + slab_thickness / 2
-                indices = (depth_02 > start).nonzero() and (depth_02 < stop).nonzero()
+                # indices = (depth_02 > start).nonzero() and (depth_02 < stop).nonzero()
+                indices = np.where((depth_02 > start) & (depth_02 < stop))
+
                 if len(indices[0]) == 0:
                     plot_02 = False
                 else:
@@ -275,7 +280,9 @@ def imshow_img_and_points_3d(
                     weights_02 = weights[indices]
 
                 start, stop = ind_01 - slab_thickness / 2, ind_01 + slab_thickness / 2
-                indices = (depth_01 > start).nonzero() and (depth_01 < stop).nonzero()
+                # indices = (depth_01 > start).nonzero() and (depth_01 < stop).nonzero()
+                indices = np.where((depth_01 > start) & (depth_01 < stop))
+
                 if len(indices[0]) == 0:
                     plot_01 = False
                 else:
@@ -286,14 +293,46 @@ def imshow_img_and_points_3d(
 
                 # Set alpha to be proportional to weights
                 if plot_12:
-                    colors_12 = cmap(_normalize(depth_12))
-                    colors_12[:, -1] = _normalize(weights_12)
+                    # Center the depths around zero to get blue-white-red
+                    centered_depth = depth_12 - np.median(depth_12)  # Using median instead of mean
+                    # Normalize to [-1, 1] then rescale to [0, 1]
+                    norm_centered = centered_depth / (np.max(np.abs(centered_depth)) + 1e-10)
+                    norm_for_cmap = norm_centered * 0.5 + 0.5  # Map [-1,1] to [0,1]
+                    colors_12 = cmap(norm_for_cmap)
+                    # Set minimum alpha while preserving relative differences
+                    normalized_weights = _normalize(weights_12)
+                    colors_12[:, -1] = min_alpha + normalized_weights * (1 - min_alpha)
+                
                 if plot_02:
-                    colors_02 = cmap(_normalize(depth_02))
-                    colors_02[:, -1] = _normalize(weights_02)
+                    # Center the depths around zero to get blue-white-red
+                    centered_depth = depth_02 - np.median(depth_02)
+                    # Normalize to [-1, 1] then rescale to [0, 1]
+                    norm_centered = centered_depth / (np.max(np.abs(centered_depth)) + 1e-10)
+                    norm_for_cmap = norm_centered * 0.5 + 0.5  # Map [-1,1] to [0,1]
+                    colors_02 = cmap(norm_for_cmap)
+                    # Set minimum alpha while preserving relative differences
+                    normalized_weights = _normalize(weights_02)
+                    colors_02[:, -1] = min_alpha + normalized_weights * (1 - min_alpha)
+                
                 if plot_01:
-                    colors_01 = cmap(_normalize(depth_01))
-                    colors_01[:, -1] = _normalize(weights_01)
+                    # Center the depths around zero to get blue-white-red
+                    centered_depth = depth_01 - np.median(depth_01)
+                    # Normalize to [-1, 1] then rescale to [0, 1]
+                    norm_centered = centered_depth / (np.max(np.abs(centered_depth)) + 1e-10)
+                    norm_for_cmap = norm_centered * 0.5 + 0.5  # Map [-1,1] to [0,1]
+                    colors_01 = cmap(norm_for_cmap)
+                    # Set minimum alpha while preserving relative differences
+                    normalized_weights = _normalize(weights_01)
+                    colors_01[:, -1] = min_alpha + normalized_weights * (1 - min_alpha)
+                # if plot_12:
+                #     colors_12 = cmap(_normalize(depth_12))
+                #     colors_12[:, -1] = _normalize(weights_12)
+                # if plot_02:
+                #     colors_02 = cmap(_normalize(depth_02))
+                #     colors_02[:, -1] = _normalize(weights_02)
+                # if plot_01:
+                #     colors_01 = cmap(_normalize(depth_01))
+                #     colors_01[:, -1] = _normalize(weights_01)
 
             if rotate_90_deg != 0:
                 if plot_12:
@@ -350,7 +389,7 @@ def imshow_registration_3d(
     weights=None,
     resize=None,
     projection=False,
-    slab_thickness=10,
+    slab_thickness=1,
     rotate_90_deg=0,
     suptitle=None,
     save_path=None,
@@ -448,8 +487,8 @@ def imshow_registration_3d(
             dpi=100,
             bbox_inches="tight",
         )
-    fig.show()
-    plt.show()
+    # fig.show() # TODO: CHANGED THIS
+    # plt.show()
     plt.close()
 
 

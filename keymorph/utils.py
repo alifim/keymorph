@@ -161,6 +161,33 @@ def sample_valid_coordinates_3d(x, num_points, point_space="norm"):
     return torch.tensor(indices).view(1, num_points, 3)
 
 
+def one_hot_eval_abdominal(tensor):
+    # Ensure the input tensor is of integer type
+
+    unique_classes = torch.unique(tensor)
+    print("Unique class values:" + str(unique_classes))
+    chs = len(unique_classes)
+    print("number of unique classes is " + str(chs))
+
+    N, _, dim1, dim2, dim3 = tensor.shape
+    one_hot = torch.zeros(N, chs, dim1, dim2, dim3, dtype=torch.long, device=tensor.device)
+
+    for i, value in enumerate(unique_classes):
+        one_hot[:, i, :, :, :] = (tensor == value)
+
+    # Calculate the number of voxels
+    num_of_voxel = N * dim1 * dim2 * dim3
+
+    # Sum the one-hot encoding along the class dimension and ensure it's an integer tensor
+    one_hot_sum = one_hot.sum(1).long().sum()
+
+    # Ensure the sum of one-hot encoding matches the total number of voxels
+    assert (
+            one_hot_sum == num_of_voxel
+    ), "One-hot encoding does not add up to the total number of voxels"
+
+    return one_hot
+
 def one_hot_eval(asegs):
     subset_regs = [
         [0, 24],  # Background and CSF
@@ -202,7 +229,32 @@ def one_hot(seg):
 
     seg: (N, 1, D, H, W) tensor of integer labels
     """
-    return F.one_hot(seg)[:, 0].permute(0, 4, 1, 2, 3)
+    # seg = seg.long()
+    # print("Unique class values:" + str(torch.unique(seg)))
+    # return F.one_hot(seg)[:, 0].permute(0, 4, 1, 2, 3)
+
+    unique_classes = torch.unique(seg)
+    sorted_classes = unique_classes.sort()[0]
+    C = len(sorted_classes)
+    print("Num of classes: " + str(C))
+
+    # Create a mapping from original classes to integer indices
+    class_map = {float(cls_val.item()): idx for idx, cls_val in enumerate(sorted_classes)}
+
+    # Apply this mapping to seg
+    seg_mapped = torch.empty_like(seg, dtype=torch.long)
+    for cls_val, idx in class_map.items():
+        seg_mapped[seg == cls_val] = idx
+
+    # seg_mapped now contains integer classes from 0 to C-1
+    print("Unique class values (mapped):", torch.unique(seg_mapped))
+
+    # One-hot encode
+    one_hot_encoded = F.one_hot(seg_mapped, num_classes=C)  # (N,1,D,H,W,C)
+    one_hot_encoded = one_hot_encoded.squeeze(dim=1)  # (N,D,H,W,C)
+    one_hot_encoded = one_hot_encoded.permute(0, 4, 1, 2, 3)  # (N,C,D,H,W)
+
+    return one_hot_encoded
 
 
 def one_hot_subsampled_pair(seg1, seg2, subsample_num=14):

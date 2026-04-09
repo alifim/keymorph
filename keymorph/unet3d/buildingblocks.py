@@ -1,4 +1,6 @@
 from functools import partial
+from torch.nn.modules.utils import _triple
+
 
 import torch
 from torch import nn as nn
@@ -360,12 +362,16 @@ class Encoder(nn.Module):
         if apply_pooling:
             if pool_type == "max":
                 if is3d:
-                    self.pooling = nn.MaxPool3d(kernel_size=pool_kernel_size)
+                    # TODO OMER CHANGED DUE TO DIMS ERROR
+                    # self.pooling = nn.MaxPool3d(kernel_size=pool_kernel_size)
+                    self.pooling = CustomMaxPool3d(kernel_size=pool_kernel_size, stride=pool_kernel_size)
                 else:
                     self.pooling = nn.MaxPool2d(kernel_size=pool_kernel_size)
             else:
                 if is3d:
-                    self.pooling = nn.AvgPool3d(kernel_size=pool_kernel_size)
+                    # self.pooling = nn.AvgPool3d(kernel_size=pool_kernel_size)
+                    self.pooling = CustomMaxPool3d(kernel_size=pool_kernel_size, stride=pool_kernel_size)
+
                 else:
                     self.pooling = nn.AvgPool2d(kernel_size=pool_kernel_size)
         else:
@@ -616,4 +622,48 @@ class NoUpsampling(AbstractUpsampling):
 
     @staticmethod
     def _no_upsampling(x, size):
+        return x
+
+
+
+class CustomMaxPool3d(nn.Module):
+    def __init__(self, kernel_size, stride=None):
+        super(CustomMaxPool3d, self).__init__()
+        # Ensure kernel_size and stride are tuples of length 3
+        self.kernel_size = _triple(kernel_size)
+        if stride is None:
+            self.stride = self.kernel_size
+        else:
+            self.stride = _triple(stride)
+
+    def forward(self, x):
+        # Get input dimensions
+        depth = x.size(2)
+        height = x.size(3)
+        width = x.size(4)
+
+        # Convert kernel_size and stride to lists for modification
+        kernel_size = list(self.kernel_size)
+        stride = list(self.stride)
+
+        # Adjust kernel_size and stride for dimensions with size 1
+        if depth <= 1:
+            kernel_size[0] = 1
+            stride[0] = 1
+        if height <= 1:
+            kernel_size[1] = 1
+            stride[1] = 1
+        if width <= 1:
+            kernel_size[2] = 1
+            stride[2] = 1
+
+        # Convert back to tuple
+        kernel_size = tuple(kernel_size)
+        stride = tuple(stride)
+
+        # Create pooling layer with adjusted parameters
+        pool = torch.nn.MaxPool3d(kernel_size=kernel_size, stride=stride)
+
+        # Apply pooling
+        x = pool(x)
         return x

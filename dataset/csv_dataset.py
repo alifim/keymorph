@@ -31,8 +31,12 @@ class CSVDataset(KeyMorphDataset):
         with open(self.csv_file, newline="") as csvfile:
             reader = csv.DictReader(csvfile)
 
-            for row in reader:
+            for idx,row in enumerate(reader):
                 if (row["train"].lower() == "true") == train:
+                    if idx%100 == 0:
+                        print(f"Loading {idx}th subject")
+                        print(row["img_path"])
+
                     modality = row["modality"]
 
                     if modality not in subjects_dict:
@@ -75,6 +79,7 @@ class CSVDataset(KeyMorphDataset):
             for row in reader:
                 if (row["train"].lower() == "true") == train:
                     # Create fixed subject
+
                     fixed_subject = tio.Subject(
                         img=tio.ScalarImage(os.path.join(row["fixed_img_path"])),
                         modality="fixed",

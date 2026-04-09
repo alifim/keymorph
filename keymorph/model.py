@@ -485,8 +485,9 @@ class Simple_Unet(nn.Module):
 
     def __init__(self, input_ch, out_ch, use_in, enc_nf, dec_nf):
         super(Simple_Unet, self).__init__()
-
-        self.down = torch.nn.MaxPool3d(2, 2)
+        # TODO OMER CHANGED BECAUSE SOME SAMPLES HAD DIMS ERROR
+        # self.down = torch.nn.MaxPool3d(2, 2)
+        self.down = CustomMaxPool3d(kernel_size=2, stride=2)
 
         self.block0 = simple_block(input_ch, enc_nf[0], use_in)
         self.block1 = simple_block(enc_nf[0], enc_nf[1], use_in)
@@ -594,3 +595,22 @@ def clean_mask(mask, threshold=0.2):
         new_mask += (connected == key).astype("uint8")
 
     return new_mask
+
+# TODO OMER ADDED TO OVERCOME THE DIMS ERROR ON SOME SAMPLES IN REALWORLD SPACE
+class CustomMaxPool3d(nn.Module):
+    def __init__(self, kernel_size, stride):
+        super(CustomMaxPool3d, self).__init__()
+        self.kernel_size = kernel_size
+        self.stride = stride
+
+    def forward(self, x):
+        if x.size(2) > 1:
+            # Depth dimension is greater than 1, use standard pooling
+            pool = torch.nn.MaxPool3d(kernel_size=self.kernel_size, stride=self.stride)
+        else:
+            # Depth dimension is 1, avoid pooling over depth
+            pool = torch.nn.MaxPool3d(
+                kernel_size=(1, self.kernel_size[1], self.kernel_size[2]),
+                stride=(1, self.stride[1], self.stride[2])
+            )
+        return pool(x)

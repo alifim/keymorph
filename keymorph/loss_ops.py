@@ -33,8 +33,11 @@ class DiceLoss(torch.nn.Module):
 
     def forward(self, pred, target, ign_first_ch=False):
         eps = 1
+        print(pred.size())
+        print(target.size())
         assert pred.size() == target.size(), "Input and target are different dim"
-
+        # if pred.size() != target.size():
+            # print("DEBUG")
         if len(target.size()) == 4:
             n, c, _, _ = target.size()
         if len(target.size()) == 5:
@@ -549,3 +552,44 @@ class MultipleAvgGridMetric(torch.nn.Module):
             for name in fn_names:
                 res[name] += self.name2fn[name](grid_permute)
         return {name: res[name] / len(batch_of_grids) for name in fn_names}
+
+
+def DiceOrgan(pred, target, organ_value):
+    """
+    Calculate Dice score for a specific organ based on its segmentation value.
+    Assumes input tensors are already in one-hot format.
+    
+    Args:
+        pred (torch.Tensor): Prediction tensor in one-hot format
+        target (torch.Tensor): Ground truth tensor in one-hot format
+        organ_value (int): Index of the organ channel in the segmentation
+        
+    Returns:
+        float: Dice score for the specified organ
+    """
+    eps = 1  # Matching epsilon from original DiceLoss
+    
+    # Get dimensions
+    n = pred.size(0)  # batch size
+    
+    # Reshape tensors to (N, C, -1) format
+    if len(pred.size()) == 4:  # 2D case
+        pred = pred.contiguous().view(n, -1, pred.size(2) * pred.size(3))
+        target = target.contiguous().view(n, -1, target.size(2) * target.size(3))
+    elif len(pred.size()) == 5:  # 3D case
+        pred = pred.contiguous().view(n, -1, pred.size(2) * pred.size(3) * pred.size(4))
+        target = target.contiguous().view(n, -1, target.size(2) * target.size(3) * target.size(4))
+    
+    # Select the specific organ channel
+    pred_organ = pred[:, organ_value, :]
+    target_organ = target[:, organ_value, :]
+    
+    # Calculate intersection and union
+    intersection = 2.0 * (pred_organ * target_organ).sum(1)
+    denominator = (pred_organ * pred_organ).sum(1) + (target_organ * target_organ).sum(1)
+    
+    # Calculate Dice score
+    dice = (intersection + eps) / (denominator + eps)
+    
+    # Return mean Dice score across batch
+    return dice.mean().item()
