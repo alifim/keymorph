@@ -265,12 +265,6 @@ def create_dirs(args):
     arguments = (
         prefix
         + args.job_name
-        + "_keypoints"
-        + str(args.num_keypoints)
-        + "_batch"
-        + str(args.batch_size)
-        + "_lr"
-        + str(args.lr)
     )
 
     args.model_dir = Path(args.save_dir) / arguments
