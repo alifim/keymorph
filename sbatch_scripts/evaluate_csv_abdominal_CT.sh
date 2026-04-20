@@ -5,7 +5,7 @@
 #SBATCH --cpus-per-task=16
 #SBATCH --time=72:00:00 # set this time according to your need
 #SBATCH --mem=64GB # how much RAM will your notebook consume?
-#SBATCH --gres=gpu:a100:1 # if you need to use a GPU
+#SBATCH --gres=gpu:1 # if you need to use a GPU
 #SBATCH -p sablab-gpu # specify partition
 #SBATCH -o ./job_out/%j-eval.out
 #SBATCH -e ./job_err/%j-eval.err
@@ -14,16 +14,23 @@ source /midtier/sablab/scratch/alm4065/keymorph/.venv/bin/activate
 
 #!/bin/bash
 
-JOB_NAME="eval_CT_numlevels5_same_mod_training_128_dice_loss_power_weighted_tps_uniform"
-#JOB_NAME="some_testing"
+JOB_NAME_PREFIX="eval_CT"
+NUM_LEVELS_FOR_UNET=5
+NUM_KEYPOINTS=128
+BATCH_SIZE=1
+LEARNING_RATE=3e-6
+LOSS_FN="dice+ssim"
+TRANSFORM_TYPE="tps_uniform"
+JOB_NAME="${JOB_NAME_PREFIX}_numlevels${NUM_LEVELS_FOR_UNET}_keypoints${NUM_KEYPOINTS}_batch${BATCH_SIZE}_lr${LEARNING_RATE}_loss${LOSS_FN}_transform${TRANSFORM_TYPE}"
+
 python /midtier/sablab/scratch/alm4065/keymorph/scripts/run.py \
     --run_mode eval \
     --job_name ${JOB_NAME} \
     --align_keypoints_in_real_world_coords \
     --kp_layer com \
-    --num_keypoints 128 \
-    --loss_fn ssim \
-    --transform_type tps_uniform \
+    --num_keypoints $NUM_KEYPOINTS \
+    --loss_fn $LOSS_FN \
+    --transform_type $TRANSFORM_TYPE \
     --train_dataset csv \
     --data_path /midtier/sablab/scratch/alm4065/keymorph/dataset/AbdomenCTCT_30_samples_combination.csv \
     --save_dir /midtier/sablab/scratch/alm4065/keymorph/experiments/evaluate_real_world_coordinates_CT \
@@ -37,4 +44,4 @@ python /midtier/sablab/scratch/alm4065/keymorph/scripts/run.py \
     --use_wandb \
     --wandb_kwargs project=keymorph name=${JOB_NAME} dir=/midtier/sablab/scratch/alm4065/wandb/ \
     --epochs 20000 \
-    --load_path /midtier/sablab/scratch/omt4002/keymorph/expriments/training_real_world_coordinates_CT/__training__train_CT_numlevels5_same_mod_training_128_power_weighted_TPS_keypoints128_batch1_lr3e-06/checkpoints/epoch16475_trained_model.pth.tar
+    --load_path /midtier/sablab/scratch/alm4065/keymorph/experiments/training_real_world_coordinates_CT/__training__train_CT_numlevels5_keypoints128_batch1_lr3e-6_lossdice+ssim_transformtps_uniform/checkpoints/epoch1000_trained_model.pth.tar
