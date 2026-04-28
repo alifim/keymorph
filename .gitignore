@@ -4,3 +4,5 @@ job_err/
 job_out/
 *.egg-info
 experiments/
+results/
+dataset/
