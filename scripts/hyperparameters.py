@@ -7,6 +7,23 @@ TRANSFORM = tio.Compose(
         # tio.Mask(masking_method="mask"),
         # tio.Resize(128),
         tio.Lambda(rescale_intensity),
+        # tio.RandomAffine(
+        #     scales=0.0,            # 0.0 means no scaling (the brain doesn't change size)
+        #     degrees=15,            # ±15 degrees rotation (handles moderate head tilt)
+        #     translation=15,        # ±15 mm translation (CRUCIAL: teaches the model to handle off-center brains)
+        #     isotropic=True,        # If you do decide to use scales (e.g., scales=0.05), this forces uniform scaling so the brain doesn't warp
+        #     p=0.8                  # Apply 80% of the time so the model still sees some perfectly aligned baseline data
+        # ),
+        # # --- 2. Intensity (New for Exp 2) ---
+        # tio.RandomGamma(
+        #     log_gamma=(-0.3, 0.3),
+        #     p=0.7
+        # ),
+        # tio.RandomBiasField(
+        #     coefficients=0.5,
+        #     order=3,
+        #     p=0.5
+        # )
         # tio.RandomNoise(mean=0, std=0.25),  # Adding Gaussian noise
         # tio.RandomBiasField(coefficients=(0, 0.5)),  # Adding MRI bias field artifact
     ]
