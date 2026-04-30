@@ -593,3 +593,46 @@ def DiceOrgan(pred, target, organ_value):
     
     # Return mean Dice score across batch
     return dice.mean().item()
+
+
+def spatial_dispersion_loss(points, margin=0.1):
+    """
+    Calculates the spatial dispersion loss to prevent keypoint collapse.
+    
+    Args:
+        points (torch.Tensor): Keypoint coordinates of shape (B, N, Dim).
+                               Expected to be in normalized [-1, 1] coordinates.
+        margin (float): The minimum acceptable Euclidean distance between any two keypoints.
+                        Since the coordinate space spans from -1 to 1 (total distance of 2.0),
+                        a margin of 0.1 corresponds to 5% of the image volume's dimension.
+                        
+    Returns:
+        torch.Tensor: A scalar loss value.
+    """
+    # Extract dimensions: B = Batch size, N = Number of keypoints (chs)
+    B, N, _ = points.shape
+    
+    # 1. Compute pairwise Euclidean distances for the entire batch.
+    # torch.cdist computes the p-norm distance between each pair of vectors.
+    # Output shape: (B, N, N)
+    dists = torch.cdist(points, points, p=2.0)
+    
+    # 2. Calculate the hinge penalty: max(0, margin - distance)
+    # This creates a positive penalty only when points are closer than the margin.
+    penalty = torch.clamp(margin - dists, min=0.0)
+    
+    # 3. Mask out the diagonal (self-distances).
+    # The distance from a point to itself is 0, which would incorrectly 
+    # trigger a penalty equal to the margin. We must zero these out.
+    eye_mask = torch.eye(N, dtype=torch.bool, device=points.device)
+    eye_mask = eye_mask.unsqueeze(0).expand(B, N, N) # Broadcast to batch size
+    
+    penalty = penalty.masked_fill(eye_mask, 0.0)
+    
+    # 4. Average the penalty over all valid off-diagonal pairs.
+    # Total valid pairs = B * N * (N - 1)
+    total_valid_pairs = B * N * (N - 1)
+    
+    loss = penalty.sum() / total_valid_pairs
+    
+    return loss

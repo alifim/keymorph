@@ -229,6 +229,7 @@ def run_train(train_loader, registration_model, optimizer, args):
             metrics["mse"] = loss_ops.MSELoss()(img_f, img_a)
             metrics['ssim'] = 1 - SSIM3D(window_size=5, size_average=True)(img_f, img_a)
             metrics['ms_ssim'] = 1 - MS_SSIM3D(window_size=5, size_average=True)(img_f, img_a)
+            
 
             if args.seg_available:
                 print(f"Shape of seg_a before dice: {seg_a.shape}")
@@ -265,6 +266,14 @@ def run_train(train_loader, registration_model, optimizer, args):
                 loss = alpha * metrics["ssim"] + (1 - alpha) * metrics["perceptual"]
             elif loss_fn == "perceptual":
                 loss = metrics["perceptual"]
+            elif loss_fn == "dice+dispersion":
+                metrics["softdiceloss"] = loss_ops.DiceLoss()(seg_a, seg_f)
+                metrics["softdice"] = 1 - metrics["softdiceloss"]
+                loss_disp_m = loss_ops.spatial_dispersion_loss(points=points_m, margin=0.1)
+                loss_disp_f = loss_ops.spatial_dispersion_loss(points=points_f, margin=0.1)
+                metrics["dispersionloss"] = (loss_disp_m + loss_disp_f) / 2
+                lambda_dispersion = 50
+                loss = metrics["softdiceloss"] + lambda_dispersion * metrics["dispersionloss"]
             else:
                 raise ValueError('Invalid loss function "{}"'.format(loss_fn))
             metrics["loss"] = loss
