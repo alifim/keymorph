@@ -6,3 +6,4 @@ job_out/
 experiments/
 results/
 dataset/
+scripts/*.png
