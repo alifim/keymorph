@@ -111,38 +111,77 @@ class KeyMorphDataset:
             num_workers=num_workers,
         )
 
-    def get_train_loader(self, batch_size, num_workers, mix_modalities, transform):
-        subjects = self.get_subjects(
-            train=True,
-        )
-        if isinstance(subjects, dict):
-            train_mods = list(subjects.keys())
-            if mix_modalities:
-                mod_pairs = list(combinations(train_mods, 2))
-            else:
-                mod_pairs = [(m, m) for m in train_mods]
+    def get_train_val_loaders(
+        self, 
+        batch_size, 
+        num_workers, 
+        mix_modalities, 
+        train_transform, 
+        val_transform=None, 
+        val_ratio=0.1, 
+        seed=23
+    ):
+        subjects = self.get_subjects(train=True)
+        
+        # 1. Initialize split containers
+        train_subjects = {} if isinstance(subjects, dict) else ([], [])
+        val_subjects = {} if isinstance(subjects, dict) else ([], [])
 
-            paired_datasets = []
-            for mod1, mod2 in mod_pairs:
-                paired_datasets.append(
-                    PairedDataset(
-                        list(itertools.product(subjects[mod1], subjects[mod2])),
-                        transform=transform,
-                    )
-                )
-            train_dataset = ConcatDataset(paired_datasets)
+        # 2. Perform Subject-Level Split
+        if isinstance(subjects, dict):
+            for mod, subj_list in subjects.items():
+                subj_list = list(subj_list) # to create a copy for shuffling
+                rng = random.Random(seed)
+                rng.shuffle(subj_list)
+                
+                split_idx = int(len(subj_list) * (1 - val_ratio))
+                train_subjects[mod] = subj_list[:split_idx]
+                val_subjects[mod] = subj_list[split_idx:]
         else:
-            train_dataset = PairedDataset(
-                list(zip(subjects[0], subjects[1])),
-                transform=transform,
-            )
+            combined = list(zip(subjects[0], subjects[1]))
+            rng = random.Random(seed)
+            rng.shuffle(combined)
+            
+            split_idx = int(len(combined) * (1 - val_ratio))
+            train_combined = combined[:split_idx]
+            val_combined = combined[split_idx:]
+            
+            train_subjects = ([x[0] for x in train_combined], [x[1] for x in train_combined])
+            val_subjects = ([x[0] for x in val_combined], [x[1] for x in val_combined])
+
+        # 3. Helper to build datasets with a specific transform
+        def build_dataset(subj_data, applied_transform):
+            if isinstance(subj_data, dict):
+                mods = list(subj_data.keys())
+                mod_pairs = list(combinations(mods, 2)) if mix_modalities else [(m, m) for m in mods]
+                paired_datasets = []
+                for mod1, mod2 in mod_pairs:
+                    paired_datasets.append(
+                        PairedDataset(
+                            list(itertools.product(subj_data[mod1], subj_data[mod2])),
+                            transform=applied_transform,
+                        )
+                    )
+                return ConcatDataset(paired_datasets)
+            else:
+                return PairedDataset(
+                    list(zip(subj_data[0], subj_data[1])),
+                    transform=applied_transform,
+                )
+
+        # 4. Build datasets applying their respective transforms
+        train_dataset = build_dataset(train_subjects, train_transform)
+        val_dataset = build_dataset(val_subjects, val_transform)
+
         train_loader = DataLoader(
-            train_dataset,
-            batch_size=batch_size,
-            shuffle=True,
-            num_workers=num_workers,
+            train_dataset, batch_size=batch_size, shuffle=True, num_workers=num_workers
         )
-        return train_loader
+        
+        val_loader = DataLoader(
+            val_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers
+        )
+        
+        return train_loader, val_loader
 
     def get_test_loaders(self, batch_size, num_workers, transform, list_of_mods):
         subjects = self.get_subjects(
@@ -180,12 +219,24 @@ class KeyMorphDataset:
         return test_loader
 
     def get_loaders(
-        self, batch_size, num_workers, mix_modalities, transform, list_of_test_mods
+        self, 
+        batch_size, 
+        num_workers, 
+        mix_modalities, 
+        train_transform, 
+        list_of_test_mods, 
+        val_transform=None, 
+        val_ratio=0.1, 
+        seed=23
     ):
-        return (
-            self.get_pretrain_loader(batch_size, num_workers, transform),
-            self.get_train_loader(batch_size, num_workers, mix_modalities, transform),
-            self.get_test_loaders(
-                batch_size, num_workers, transform, list_of_test_mods
-            ),
+        train_loader, val_loader = self.get_train_val_loaders(
+            batch_size, num_workers, mix_modalities, train_transform, val_transform, val_ratio, seed
         )
+        
+        return {
+            "pretrain": self.get_pretrain_loader(batch_size, num_workers, train_transform),
+            "train": train_loader,
+            "val": val_loader,
+            # Note: eval typically uses the same clean transform as val
+            "eval": self.get_test_loaders(batch_size, num_workers, val_transform, list_of_test_mods), 
+        }
