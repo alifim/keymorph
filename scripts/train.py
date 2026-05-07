@@ -11,7 +11,7 @@ from keymorph.augmentation import random_affine_augment
 import keymorph.loss_ops as loss_ops
 from keymorph.pytorch_ssim import SSIM3D,MS_SSIM3D
 
-from scripts.script_utils import aggregate_dicts
+from scripts.script_utils import aggregate_dicts, aggregate_dicts, compute_metrics_and_loss
 def print_dimension_info(fixed, moving):
     """Print detailed dimension information for debugging"""
     print("\n=== DIMENSION DEBUGGING INFO ===")
@@ -222,61 +222,14 @@ def run_train(train_loader, registration_model, optimizer, args):
                     grid, seg_m
                 )  # Note we use bilinear interpolation here so that backprop works
 
-            # Compute metrics
-            metrics = {}
-
-            metrics["scale_augment"] = scale_augment
-            metrics["mse"] = loss_ops.MSELoss()(img_f, img_a)
-            metrics['ssim'] = 1 - SSIM3D(window_size=5, size_average=True)(img_f, img_a)
-            metrics['ms_ssim'] = 1 - MS_SSIM3D(window_size=5, size_average=True)(img_f, img_a)
-            
-
-            if args.seg_available:
-                print(f"Shape of seg_a before dice: {seg_a.shape}")
-                print(f"Shape of seg_f before dice: {seg_f.shape}")
-                print(f"Unique values in seg_a: {torch.unique(seg_a)}")
-                print(f"Unique values in seg_f: {torch.unique(seg_f)}")
-
-            # Compute loss
-            if loss_fn == "mse":
-                loss = metrics["mse"]
-            elif loss_fn == "dice":
-                metrics["softdiceloss"] = loss_ops.DiceLoss()(seg_a, seg_f)
-                metrics["softdice"] = 1 - metrics["softdiceloss"]
-                loss = metrics["softdiceloss"]
-            elif loss_fn == "ssim":
-                loss = metrics["ssim"]
-            elif loss_fn == "mse+ssim":
-                alpha = 0.8
-                loss = alpha * metrics["mse"] + (1 - alpha) * metrics["ssim"]
-            elif loss_fn == "dice+mse":
-                metrics["softdiceloss"] = loss_ops.DiceLoss()(seg_a, seg_f)
-                metrics["softdice"] = 1 - metrics["softdiceloss"]
-                alpha = 0.5
-                loss = alpha * metrics["mse"] + (1 - alpha) * metrics['softdiceloss']
-            elif loss_fn == "dice+ssim":
-                metrics["softdiceloss"] = loss_ops.DiceLoss()(seg_a, seg_f)
-                metrics["softdice"] = 1 - metrics["softdiceloss"]
-                alpha = 0.5
-                loss = alpha * metrics["ssim"] + (1 - alpha) * metrics['softdiceloss']
-            elif loss_fn == "ms_ssim":
-                loss = metrics['ms_ssim']
-            elif loss_fn == "perceptual+ssim":
-                alpha = 0.5
-                loss = alpha * metrics["ssim"] + (1 - alpha) * metrics["perceptual"]
-            elif loss_fn == "perceptual":
-                loss = metrics["perceptual"]
-            elif loss_fn == "dice+dispersion":
-                metrics["softdiceloss"] = loss_ops.DiceLoss()(seg_a, seg_f)
-                metrics["softdice"] = 1 - metrics["softdiceloss"]
-                loss_disp_m = loss_ops.spatial_dispersion_loss(points=points_m, margin=0.1)
-                loss_disp_f = loss_ops.spatial_dispersion_loss(points=points_f, margin=0.1)
-                metrics["dispersionloss"] = (loss_disp_m + loss_disp_f) / 2
-                lambda_dispersion = 50
-                loss = metrics["softdiceloss"] + lambda_dispersion * metrics["dispersionloss"]
-            else:
-                raise ValueError('Invalid loss function "{}"'.format(loss_fn))
-            metrics["loss"] = loss
+            # Compute unified metrics and loss
+            metrics, loss = compute_metrics_and_loss(
+                args, img_f, img_a, 
+                seg_f=seg_f if args.seg_available else None, 
+                seg_a=seg_a if args.seg_available else None, 
+                points_f=points_f, 
+                points_m=points_m
+            )
 
         # Perform backward pass
         if args.use_amp:
