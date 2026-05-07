@@ -5,5 +5,5 @@ job_out/
 *.egg-info
 experiments/
 results/
-dataset/
+dataset/*.csv
 scripts/*.png
