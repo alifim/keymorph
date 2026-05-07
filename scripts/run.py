@@ -20,6 +20,7 @@ from keymorph.viz_tools import imshow_img_and_points_3d
 from dataset import csv_dataset, ixi_dataset
 import scripts.hyperparameters as hps
 from scripts.train import run_train
+from scripts.val import run_val
 from scripts.pretrain import run_pretrain
 from scripts.pairwise_register_eval import run_eval
 from scripts import script_utils
@@ -170,6 +171,13 @@ def parse_args():
     parser.add_argument(
         "--num_test_subjects", type=int, default=100, help="Num test subjects"
     )
+    parser.add_argument(
+        "--aug_strategy",
+        type=str,
+        default="baseline",
+        choices=["baseline", "spatial", "spatial+intensity"],
+        help="Which augmentation recipe to use from hyperparameters.py",
+    )
 
     # ML
     parser.add_argument("--batch_size", type=int, default=1, help="Batch size")
@@ -193,6 +201,18 @@ def parse_args():
         type=int,
         default=-1,
         help="Constant to control how slow to increase augmentation. If negative, disabled.",
+    )
+    parser.add_argument(
+        "--loss_alpha", 
+        type=float, 
+        default=0.5, 
+        help="Weighting factor for combined losses (e.g., mse+ssim)"
+    )
+    parser.add_argument(
+        "--lambda_dispersion", 
+        type=float, 
+        default=0.5, 
+        help="Weighting factor for the spatial dispersion loss"
     )
 
     # Miscellaneous
@@ -297,7 +317,7 @@ def set_seed(args):
     torch.manual_seed(args.seed)
 
 
-def get_data(transform, args):
+def get_data(train_transform, val_transform, args):
     if args.train_dataset == "csv":
         dataset = csv_dataset.CSVDataset(args.data_path)
     elif args.train_dataset == "ixi":
@@ -305,26 +325,16 @@ def get_data(transform, args):
     else:
         raise ValueError('Invalid dataset "{}"'.format(args.train_dataset))
 
-    pretrain_loader, train_loader, id_eval_loaders = dataset.get_loaders( # TODO OMER CHANGED FOR whole inference
+    loaders_dict = dataset.get_loaders(
         args.batch_size,
         args.num_workers,
         args.mix_modalities,
-        transform=transform,
+        train_transform=train_transform,
+        val_transform=val_transform,
         list_of_test_mods=hps.EVAL_UNI_NAMES,
     )
-    # id_eval_loaders = dataset.get_loaders(
-    #     args.batch_size,
-    #     args.num_workers,
-    #     args.mix_modalities,
-    #     transform=transform,
-    #     list_of_test_mods=hps.EVAL_UNI_NAMES,
-    # )
     args.seg_available = dataset.seg_available
-    return { # TODO CHANGE THIS FOR WHOLE
-        "pretrain": pretrain_loader,
-        "train": train_loader,
-        "eval": id_eval_loaders,
-    }
+    return loaders_dict
 
 
 def get_model(args):
@@ -419,8 +429,9 @@ def main():
     set_seed(args)
 
     # Data
-    transform = hps.TRANSFORM
-    loaders = get_data(transform, args)
+    train_transform = hps.get_train_transform(args.aug_strategy)
+    val_transform = hps.VAL_TRANSFORM
+    loaders = get_data(train_transform, val_transform, args)
 
     # Model
     registration_model = get_model(args)
@@ -594,52 +605,81 @@ def main():
                     ),
                 )
     else:
-        registration_model.train()
+        # --- Standard Training Mode ---
         train_loss = []
+        best_val_loss = float('inf') # Track the best validation metric
 
         if args.use_wandb and not args.debug_mode:
             initialize_wandb(args)
 
         if args.resume:
             start_epoch = ckpt_state["epoch"] + 1
+            # Optional: Load best_val_loss from ckpt_state if you saved it
         else:
             start_epoch = 1
 
         for epoch in range(start_epoch, args.epochs + 1):
             args.curr_epoch = epoch
             print(f"\nEpoch {epoch}/{args.epochs}")
+            
+            # 1. TRAIN
+            registration_model.train()
             epoch_stats = run_train(
                 loaders["train"],
                 registration_model,
                 optimizer,
                 args,
             )
+            
+            # 2. VALIDATE (New Step)
+            registration_model.eval()
+            val_stats = run_val( # You will need to write this function
+                loaders["val"],
+                registration_model,
+                args,
+            )
+
+            # --- Logging ---
             if "loss" in epoch_stats:
                 train_loss.append(epoch_stats["loss"])
-            else:
-                print(f"[Warning] 'loss' not found in epoch_stats at epoch {epoch}. Skipping append.")
-
+            
             for metric_name, metric in epoch_stats.items():
                 print(f"[Train Stat] {metric_name}: {metric:.5f}")
+            for metric_name, metric in val_stats.items():
+                print(f"[Val Stat] {metric_name}: {metric:.5f}")
 
             if args.use_wandb and not args.debug_mode:
-                wandb.log(epoch_stats)
+                # Log both train and val stats
+                wandb.log({**epoch_stats, **{f"val_{k}": v for k, v in val_stats.items()}})
 
-            # Save model
-            if epoch % args.log_interval == 0 and not args.debug_mode:
+            # 3. SAVE CHECKPOINTS
+            if not args.debug_mode:
                 state = {
                     "epoch": epoch,
                     "args": args,
                     "state_dict": registration_model.backbone.state_dict(),
                     "optimizer": optimizer.state_dict(),
+                    "val_loss": val_stats.get("loss", float('inf')),
                 }
-                torch.save(
-                    state,
-                    os.path.join(
-                        args.model_ckpt_dir,
-                        "epoch{}_trained_model.pth.tar".format(epoch),
-                    ),
-                )
+                
+                # Save regular interval checkpoint
+                if epoch % args.log_interval == 0:
+                    torch.save(
+                        state,
+                        os.path.join(
+                            args.model_ckpt_dir,
+                            "epoch{}_trained_model.pth.tar".format(epoch),
+                        ),
+                    )
+                
+                # Save BEST model based on validation loss
+                if val_stats.get("loss", float('inf')) < best_val_loss:
+                    best_val_loss = val_stats["loss"]
+                    print(f"--> New best validation loss: {best_val_loss:.5f}. Saving model.")
+                    torch.save(
+                        state,
+                        os.path.join(args.model_ckpt_dir, f"best_val_model_val{best_val_loss:.5f}.pth.tar")
+                    )
 
 
 if __name__ == "__main__":
