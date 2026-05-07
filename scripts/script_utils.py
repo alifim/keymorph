@@ -5,6 +5,8 @@ from collections import defaultdict
 import os
 import argparse
 import json
+import keymorph.loss_ops as loss_ops
+from keymorph.pytorch_ssim import SSIM3D, MS_SSIM3D
 
 try:
     import wandb
@@ -152,3 +154,53 @@ def get_latest_epoch_file(directory_path, args):
         return os.path.join(directory_path, latest_epoch_file)
     else:
         return None
+
+
+def compute_metrics_and_loss(args, img_f, img_a, seg_f=None, seg_a=None, points_f=None, points_m=None):
+    """
+    Unified loss and metric computation for both training and validation loops.
+    """
+    metrics = {}
+    loss_fn = args.loss_fn
+
+    # Base image metrics (Always computed)
+    metrics["mse"] = loss_ops.MSELoss()(img_f, img_a)
+    metrics["ssim"] = 1 - SSIM3D(window_size=5, size_average=True)(img_f, img_a)
+    metrics["ms_ssim"] = 1 - MS_SSIM3D(window_size=5, size_average=True)(img_f, img_a)
+
+    # Base segmentation metrics
+    if args.seg_available and seg_f is not None and seg_a is not None:
+        metrics["softdiceloss"] = loss_ops.DiceLoss()(seg_a, seg_f)
+        metrics["softdice"] = 1 - metrics["softdiceloss"]
+
+    # Compute Final Loss based on args.loss_fn
+    if loss_fn == "mse":
+        loss = metrics["mse"]
+    elif loss_fn == "dice":
+        loss = metrics["softdiceloss"]
+    elif loss_fn == "ssim":
+        loss = metrics["ssim"]
+    elif loss_fn == "ms_ssim":
+        loss = metrics["ms_ssim"]
+    elif loss_fn == "perceptual":
+        loss = metrics["perceptual"] # Assumes perceptual is calculated elsewhere or add logic here
+    elif loss_fn == "mse+ssim":
+        loss = args.loss_alpha * metrics["mse"] + (1 - args.loss_alpha) * metrics["ssim"]
+    elif loss_fn == "dice+mse":
+        loss = args.loss_alpha * metrics["mse"] + (1 - args.loss_alpha) * metrics["softdiceloss"]
+    elif loss_fn == "dice+ssim":
+        loss = args.loss_alpha * metrics["ssim"] + (1 - args.loss_alpha) * metrics["softdiceloss"]
+    elif loss_fn == "perceptual+ssim":
+        loss = args.loss_alpha * metrics["ssim"] + (1 - args.loss_alpha) * metrics["perceptual"]
+    elif loss_fn == "dice+dispersion":
+        loss_disp_m = loss_ops.spatial_dispersion_loss(points=points_m, margin=0.1)
+        loss_disp_f = loss_ops.spatial_dispersion_loss(points=points_f, margin=0.1)
+        metrics["dispersionloss"] = (loss_disp_m + loss_disp_f) / 2
+        
+        # Using the parameter from args!
+        loss = metrics["softdiceloss"] + args.lambda_dispersion * metrics["dispersionloss"]
+    else:
+        raise ValueError(f'Invalid loss function "{loss_fn}"')
+
+    metrics["loss"] = loss
+    return metrics, loss
