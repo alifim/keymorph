@@ -1,4 +1,5 @@
 import torch
+import torch.nn as nn
 import torch.nn.functional as F
 import scipy
 from scipy.ndimage import morphology
@@ -636,3 +637,37 @@ def spatial_dispersion_loss(points, margin=0.1):
     loss = penalty.sum() / total_valid_pairs
     
     return loss
+
+
+class KeypointMaskGuidanceLoss(nn.Module):
+    def __init__(self):
+        super(KeypointMaskGuidanceLoss, self).__init__()
+
+    def forward(self, points, mask):
+        """
+        Args:
+            points: Tensor of shape (B, N, 3). Coordinates must be normalized to [-1, 1].
+            mask: Binary anatomical mask of shape (B, 1, D, H, W) where 1 is valid anatomy.
+        """
+        B, N, _ = points.shape
+        
+        # Reshape to trick grid_sample into outputting a list of N sampled points
+        # 3D grid_sample expects: (B, D_out, H_out, W_out, 3)
+        grid = points.view(B, N, 1, 1, 3)
+
+        # Sample the mask at the keypoint locations
+        sampled_values = F.grid_sample(
+            mask.float(), 
+            grid, 
+            mode='bilinear',       # Trilinear interpolation in 3D
+            padding_mode='zeros',  # Heavily penalize points that fly completely outside the volume
+            align_corners=True
+        )
+        
+        # Output shape is (B, 1, N, 1, 1), flatten to (B, N)
+        sampled_values = sampled_values.view(B, N)
+        
+        # We want the sampled value to be 1.0 (inside the mask). 
+        # Loss is minimized when all points sample 1.0.
+        loss = torch.mean(1.0 - sampled_values)
+        return loss

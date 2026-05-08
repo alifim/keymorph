@@ -21,7 +21,10 @@ BATCH_SIZE=1
 LEARNING_RATE=3e-6
 LOSS_FN="dice"
 TRANSFORM_TYPE="tps_uniform"
-JOB_NAME="${JOB_NAME_PREFIX}_numlevels${NUM_LEVELS_FOR_UNET}_keypoints${NUM_KEYPOINTS}_batch${BATCH_SIZE}_lr${LEARNING_RATE}_loss${LOSS_FN}_transform${TRANSFORM_TYPE}"
+LAMBDA_MASK=0.5
+LAMBDA_DISPERSION=0.5
+AUG_STRATEGY="baseline"
+JOB_NAME="${JOB_NAME_PREFIX}_lambdamask${LAMBDA_MASK}_lambdadispersion${LAMBDA_DISPERSION}_augstrategy${AUG_STRATEGY}_numlevels${NUM_LEVELS_FOR_UNET}_keypoints${NUM_KEYPOINTS}_batch${BATCH_SIZE}_lr${LEARNING_RATE}_loss${LOSS_FN}_transform${TRANSFORM_TYPE}"
 
 #JOB_NAME="some_testing"
 python /midtier/sablab/scratch/alm4065/keymorph/scripts/run.py \
@@ -31,10 +34,13 @@ python /midtier/sablab/scratch/alm4065/keymorph/scripts/run.py \
     --kp_layer com \
     --num_keypoints ${NUM_KEYPOINTS} \
     --loss_fn ${LOSS_FN} \
+    --lambda_mask ${LAMBDA_MASK} \
+    --lambda_dispersion ${LAMBDA_DISPERSION} \
+    --aug_strategy ${AUG_STRATEGY} \
     --transform_type ${TRANSFORM_TYPE} \
     --train_dataset csv \
     --data_path /midtier/sablab/scratch/alm4065/keymorph/dataset/adni_lowest_10_percent_pairs.csv \
-    --save_dir /midtier/sablab/scratch/alm4065/keymorph/experiments/train_ADNI \
+    --save_dir /midtier/sablab/scratch/alm4065/keymorph/experiments/train_ADNI_64keypoints \
     --visualize \
     --use_amp \
     --weighted_kp_align power \

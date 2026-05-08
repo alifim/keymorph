@@ -156,7 +156,7 @@ def get_latest_epoch_file(directory_path, args):
         return None
 
 
-def compute_metrics_and_loss(args, img_f, img_a, seg_f=None, seg_a=None, points_f=None, points_m=None):
+def compute_metrics_and_loss(args, img_f, img_a, seg_f=None, seg_a=None, seg_m=None,points_f=None, points_m=None):
     """
     Unified loss and metric computation for both training and validation loops.
     """
@@ -199,6 +199,22 @@ def compute_metrics_and_loss(args, img_f, img_a, seg_f=None, seg_a=None, points_
         
         # Using the parameter from args!
         loss = metrics["softdiceloss"] + args.lambda_dispersion * metrics["dispersionloss"]
+    elif loss_fn == "dice+mask":
+        if seg_f is None or seg_m is None or points_f is None or points_m is None:
+            raise ValueError("seg_f, seg_m, points_f, and points_m must be provided for symmetric mask guidance")
+        
+        loss_mask_fn = loss_ops.KeypointMaskGuidanceLoss()
+        
+        # Penalize fixed points outside fixed mask
+        loss_mask_f = loss_mask_fn(points_f, seg_f)
+        
+        # Penalize moving points outside moving mask
+        loss_mask_m = loss_mask_fn(points_m, seg_m)
+        
+        metrics["point_mask_loss"] = (loss_mask_f + loss_mask_m) / 2
+        
+        # Combine with Dice + your dispersion loss if desired
+        loss = metrics["softdiceloss"] + args.lambda_mask * metrics["point_mask_loss"]
     else:
         raise ValueError(f'Invalid loss function "{loss_fn}"')
 

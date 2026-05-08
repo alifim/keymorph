@@ -214,6 +214,12 @@ def parse_args():
         default=0.5, 
         help="Weighting factor for the spatial dispersion loss"
     )
+    parser.add_argument(
+        "--lambda_mask", 
+        type=float, 
+        default=0.5, 
+        help="Weighting factor for the mask-guided points loss"
+    )
 
     # Miscellaneous
     parser.add_argument(

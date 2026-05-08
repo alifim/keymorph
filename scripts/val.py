@@ -146,6 +146,7 @@ def run_val(val_loader, registration_model, args):
             args, img_f, img_a, 
             seg_f=seg_f if args.seg_available else None, 
             seg_a=seg_a if args.seg_available else None, 
+            seg_m=seg_m if args.seg_available else None,
             points_f=points_f, 
             points_m=points_m
         )
