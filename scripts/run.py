@@ -620,7 +620,13 @@ def main():
 
         if args.resume:
             start_epoch = ckpt_state["epoch"] + 1
-            # Optional: Load best_val_loss from ckpt_state if you saved it
+            best_val_loss = ckpt_state.get(
+                "best_val_loss", ckpt_state.get("val_loss", float("inf"))
+            )
+            best_path = os.path.join(args.model_ckpt_dir, "best_val_model.pth.tar")
+            if os.path.isfile(best_path):
+                best_state = torch.load(best_path, map_location="cpu", weights_only=False)
+                best_val_loss = min(best_val_loss, best_state["val_loss"])
         else:
             start_epoch = 1
 
@@ -644,6 +650,9 @@ def main():
                 registration_model,
                 args,
             )
+            val_loss = val_stats["loss"]
+            is_best = val_loss < best_val_loss
+            best_val_loss = min(best_val_loss, val_loss)
 
             # --- Logging ---
             if "loss" in epoch_stats:
@@ -665,7 +674,8 @@ def main():
                     "args": args,
                     "state_dict": registration_model.backbone.state_dict(),
                     "optimizer": optimizer.state_dict(),
-                    "val_loss": val_stats.get("loss", float('inf')),
+                    "val_loss": val_loss,
+                    "best_val_loss": best_val_loss,
                 }
                 
                 # Save regular interval checkpoint
@@ -679,8 +689,7 @@ def main():
                     )
                 
                 # Save BEST model based on validation loss
-                if val_stats.get("loss", float('inf')) < best_val_loss:
-                    best_val_loss = val_stats["loss"]
+                if is_best:
                     print(f"--> New best validation loss: {best_val_loss:.5f} at epoch {epoch}. Saving model.")
                     torch.save(
                         state,
