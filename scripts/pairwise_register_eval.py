@@ -1,3 +1,4 @@
+import gc
 import os
 import torch
 import numpy as np
@@ -599,6 +600,18 @@ def run_eval(
                     test_metrics[f"{m}:{mod1}:{mod2}:{aug}:{align_type_str}"].append(
                         metrics[m]
                     )
+
+        # Release references to the previous pair before loading the next one.
+        fixed = moving = None
+        img_f = img_m = img_a = None
+        seg_f = seg_m = seg_a = None
+        grid = grid_permute = None
+        points_f = points_m = points_a = points_weights = None
+        registration_results = all_metrics = res_dict = metrics = None
+        nifti_img = nifti_seg_f = nifti_seg_m = nifti_seg_a = None
+        seg_f_np = seg_m_np = seg_a_np = None
+        gc.collect()
+        torch.cuda.empty_cache()
 
     return test_metrics
 
