@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-#SBATCH --job-name=TrainRKMADNI # give your job a name
+#SBATCH --job-name=TrainRKM # give your job a name
 #SBATCH --nodes=1
 #SBATCH --cpus-per-task=16
 #SBATCH --time=72:00:00 # set this time according to your need
@@ -50,5 +50,6 @@ python /midtier/sablab/scratch/alm4065/keymorph/scripts/run.py \
     --max_random_affine_augment_params 0 0 0 0 \
     --use_wandb \
     --wandb_kwargs project=keymorph name=${JOB_NAME} dir=/midtier/sablab/scratch/alm4065/wandb/ \
+    --lr ${LEARNING_RATE} \
     --epochs 20000 \
     --load_path "/midtier/sablab/scratch/omt4002/keymorph/expriments/pretraining_real_world_coordinates/__pretrain__pretrain_noaffineaug_ax_and_cor_tocanonical_numlevels5_same_mod_training_64_power_weighted_keypoints64_batch1_lr3e-06/checkpoints/pretrained_epoch15000_model.pth.tar"
