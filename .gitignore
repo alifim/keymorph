@@ -1,9 +1,22 @@
+# Virtual Environment
 .venv/
+
+# Cache
 __pycache__/
-job_err/
-job_out/
 *.egg-info
+
+# Experiments
 experiments/
 results/
-dataset/*.csv
+
+# Images
 scripts/*.png
+
+# Dataset
+dataset/*.csv
+dataset/abdominal_mri
+
+# Logs
+job_err/
+job_out/
+sbatch_scripts/logs
