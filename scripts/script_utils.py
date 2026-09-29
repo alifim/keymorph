@@ -156,7 +156,7 @@ def get_latest_epoch_file(directory_path, args):
         return None
 
 
-def compute_metrics_and_loss(args, img_f, img_a, seg_f=None, seg_a=None, seg_m=None,points_f=None, points_m=None):
+def compute_metrics_and_loss(args, img_f, img_a, seg_f=None, seg_a=None, seg_m=None, points_f=None, points_m=None):
     """
     Unified loss and metric computation for both training and validation loops.
     """
@@ -166,7 +166,6 @@ def compute_metrics_and_loss(args, img_f, img_a, seg_f=None, seg_a=None, seg_m=N
     # Base image metrics (Always computed)
     metrics["mse"] = loss_ops.MSELoss()(img_f, img_a)
     metrics["ssim"] = 1 - SSIM3D(window_size=5, size_average=True)(img_f, img_a)
-    metrics["ms_ssim"] = 1 - MS_SSIM3D(window_size=5, size_average=True)(img_f, img_a)
 
     # Base segmentation metrics
     if args.seg_available and seg_f is not None and seg_a is not None:
@@ -181,6 +180,7 @@ def compute_metrics_and_loss(args, img_f, img_a, seg_f=None, seg_a=None, seg_m=N
     elif loss_fn == "ssim":
         loss = metrics["ssim"]
     elif loss_fn == "ms_ssim":
+        metrics["ms_ssim"] = 1 - MS_SSIM3D(window_size=5, size_average=True)(img_f, img_a)
         loss = metrics["ms_ssim"]
     elif loss_fn == "perceptual":
         loss = metrics["perceptual"] # Assumes perceptual is calculated elsewhere or add logic here
@@ -192,29 +192,49 @@ def compute_metrics_and_loss(args, img_f, img_a, seg_f=None, seg_a=None, seg_m=N
         loss = args.loss_alpha * metrics["ssim"] + (1 - args.loss_alpha) * metrics["softdiceloss"]
     elif loss_fn == "perceptual+ssim":
         loss = args.loss_alpha * metrics["ssim"] + (1 - args.loss_alpha) * metrics["perceptual"]
+
+    # --- Dispersion Losses ---
     elif loss_fn == "dice+dispersion":
         loss_disp_m = loss_ops.spatial_dispersion_loss(points=points_m, margin=0.1)
         loss_disp_f = loss_ops.spatial_dispersion_loss(points=points_f, margin=0.1)
         metrics["dispersionloss"] = (loss_disp_m + loss_disp_f) / 2
-        
-        # Using the parameter from args!
+
         loss = metrics["softdiceloss"] + args.lambda_dispersion * metrics["dispersionloss"]
+
+    elif loss_fn == "dice+ssim+dispersion":
+        loss_disp_m = loss_ops.spatial_dispersion_loss(points=points_m, margin=0.1)
+        loss_disp_f = loss_ops.spatial_dispersion_loss(points=points_f, margin=0.1)
+        metrics["dispersionloss"] = (loss_disp_m + loss_disp_f) / 2
+
+        # Combine Dice + SSIM with alpha, then add dispersion with lambda
+        base_loss = args.loss_alpha * metrics["ssim"] + (1 - args.loss_alpha) * metrics["softdiceloss"]
+        loss = base_loss + args.lambda_dispersion * metrics["dispersionloss"]
+
+    # --- Mask Guidance Losses ---
     elif loss_fn == "dice+mask":
         if seg_f is None or seg_m is None or points_f is None or points_m is None:
             raise ValueError("seg_f, seg_m, points_f, and points_m must be provided for symmetric mask guidance")
-        
+
         loss_mask_fn = loss_ops.KeypointMaskGuidanceLoss()
-        
-        # Penalize fixed points outside fixed mask
-        loss_mask_f = loss_mask_fn(points_f, seg_f)
-        
-        # Penalize moving points outside moving mask
-        loss_mask_m = loss_mask_fn(points_m, seg_m)
-        
+        loss_mask_f = loss_mask_fn(points_f, seg_f.clamp(0, 1))
+        loss_mask_m = loss_mask_fn(points_m, seg_m.clamp(0, 1))
         metrics["point_mask_loss"] = (loss_mask_f + loss_mask_m) / 2
-        
-        # Combine with Dice + your dispersion loss if desired
+
         loss = metrics["softdiceloss"] + args.lambda_mask * metrics["point_mask_loss"]
+
+    elif loss_fn == "dice+ssim+mask":
+        if seg_f is None or seg_m is None or points_f is None or points_m is None:
+            raise ValueError("seg_f, seg_m, points_f, and points_m must be provided for symmetric mask guidance")
+
+        loss_mask_fn = loss_ops.KeypointMaskGuidanceLoss()
+        loss_mask_f = loss_mask_fn(points_f, seg_f.clamp(0, 1))
+        loss_mask_m = loss_mask_fn(points_m, seg_m.clamp(0, 1))
+        metrics["point_mask_loss"] = (loss_mask_f + loss_mask_m) / 2
+
+        # Combine Dice + SSIM with alpha, then add mask with lambda
+        base_loss = args.loss_alpha * metrics["ssim"] + (1 - args.loss_alpha) * metrics["softdiceloss"]
+        loss = base_loss + args.lambda_mask * metrics["point_mask_loss"]
+
     else:
         raise ValueError(f'Invalid loss function "{loss_fn}"')
 
