@@ -681,10 +681,10 @@ def main():
                 # Save BEST model based on validation loss
                 if val_stats.get("loss", float('inf')) < best_val_loss:
                     best_val_loss = val_stats["loss"]
-                    print(f"--> New best validation loss: {best_val_loss:.5f}. Saving model.")
+                    print(f"--> New best validation loss: {best_val_loss:.5f} at epoch {epoch}. Saving model.")
                     torch.save(
                         state,
-                        os.path.join(args.model_ckpt_dir, f"best_val_model_val{best_val_loss:.5f}.pth.tar")
+                        os.path.join(args.model_ckpt_dir, f"best_val_model.pth.tar")
                     )
 
 
